@@ -1,18 +1,18 @@
 /*
- * CS 1652 Project 1 
+ * CS 1652 Project 1
  * (c) Jack Lange, 2020
- * (c) <Student names here>
- * 
+ * (c) <Christopher Godfrey, Diana Kocsis>
+ *
  * Computer Science Department
  * University of Pittsburgh
  */
-
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <ctype.h>
 
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -22,73 +22,158 @@
 #define BUFSIZE 1024
 #define FILENAMESIZE 100
 
+#define TRUE 1
+#define FALSE 0
 
-static int 
-handle_connection(int sock) 
-{
-
+static int handle_connection(int sock){
+    /*header declaration*/
     char * ok_response_f  = "HTTP/1.0 200 OK\r\n"        \
         					"Content-type: text/plain\r\n"                  \
-        					"Content-length: %d \r\n\r\n";
- 
+        					"Content-Length: %d \r\n\r\n";
+
     char * notok_response = "HTTP/1.0 404 FILE NOT FOUND\r\n"   \
         					"Content-type: text/html\r\n\r\n"                       \
         					"<html><body bgColor=black text=white>\n"               \
         					"<h2>404 FILE NOT FOUND</h2>\n"
         					"</body></html>\n";
-    
-	(void)notok_response;  // DELETE ME
-	(void)ok_response_f;   // DELETE ME
+    /*variable declarations*/
+	int len, i, j, c, res, fsize;
+    char buf[BUFSIZE];
+    char fileName[FILENAMESIZE];
+    int ok_response = 0;
 
     /* first read loop -- get request and headers*/
-    
-    /* parse request to get file name */
-    /* Assumption: this is a GET request and filename contains no spaces*/
+    while (( c = accept(sock, NULL, NULL)) >= 0 ){
+        if ((len = read(c, buf, sizeof(buf) - 1)) <= 0){
+            fprintf(stderr, "FAILED TO READ LINE FROM SOCKET");
+            exit(-1);
+        }
 
-    /* open and read the file */
-	
-	/* send response */
+        /*Lets Server Operator know that Client has connected */
+        printf("Client Connected, Reading Request...%c", '\n');
 
+        /*gets the filename from the read buffer*/
+        j = 0; /*file size*/
+        for ( i = 5; i < len; i++){ /*Assumption that is made is that every buffer request to the server will look the same so we can start on the 5th index point*/
+            if ( buf[i] == ' ') /*When you reach a space, that is how you know you reach the end of the file.*/
+                break;
+            else {
+                fileName[j] = buf[i];
+                j++;
+            }
+        }
+        buf[len] = 0; /*resets the buffer array so we can store the contents of file into the buffer array.*/
+        /*Lets the sever operator know the exact requested file*/
+        printf("The Requested file is: ");
+        int k;
+        for ( k= 0; k < j; k++)
+            printf("%c", fileName[k]);
+
+         printf("%c", '\n');
+
+         /* open and read the files */
+        FILE *req = fopen(fileName, "rb" );
+
+        if ( req == NULL){
+            fprintf(stderr, "Error Opening file: %s%c ", fileName, '\n'); /*Okayresponse is set to default automatically so we don't set it here*/
+        }
+        else{
+            printf("Successfully opened file... %c", '\n');
+            ok_response = 1;
+        }
+        /*if the file was found, the response will be okay*/
+        if ( ok_response ){
+            /*first it sends the header to the socket to indicate an OK response*/
+            if ((res = write(c, ok_response_f, strlen(ok_response_f))) <= 0){
+                fprintf(stderr, "FAILED TO WRITE OUT LINE TO SOCKET");
+                exit(-1);
+            }
+            /*Opens and reads the file into buf*/
+            fseek(req, 0, SEEK_END);
+            fsize = ftell(req);
+            rewind(req);
+            fread(buf, fsize, 1, req);
+
+            /*sends the contents of the finle into the socket*/
+            if ((res = write(c, buf, strlen(buf))) <= 0){
+                fprintf(stderr, "FAILED TO WRITE OUT LINE TO SOCKET");
+                exit(-1);
+            }
+        }
+        /* sends ok_response message if the file was not found */
+        if ( !ok_response ){
+            if ((res = write(c, notok_response, strlen(notok_response))) <= 0){
+                fprintf(stderr, "FAILED TO WRITE OUT LINE TO SOCKET");
+                exit(-1);
+            }
+        }
+        printf("Request Processed, sending response to the Client...%c", '\n');
+        close(c);
+        printf("Waiting for client connection...%c", '\n');
+
+    }
     /* close socket and free pointers */
-
+    close(sock);
+    /* open and read the file */
 	return 0;
 }
-
-
-int 
-main(int argc, char ** argv)
-{
+int main(int argc, char ** argv){
     int server_port = -1;
     int ret         =  0;
-    int sock        = -1;
+    //int sock = -1;
+    int listener, binder, s;
 
+    struct sockaddr_in saddr; //structure to initialize socket address
     /* parse command line args */
     if (argc != 2) {
         fprintf(stderr, "usage: http_server1 port\n");
         exit(-1);
     }
-
     server_port = atoi(argv[1]);
 
-    if (server_port < 1500) {
-        fprintf(stderr, "INVALID PORT NUMBER: %d; can't be < 1500\n", server_port);
+    if (server_port < 0 || server_port > 65535) {
+        fprintf(stderr, "INVALID PORT NUMBER: %d;", server_port);
         exit(-1);
     }
-
-    /* initialize and make socket */
-
-    /* set server address*/
-
-    /* bind listening socket */
-
-    /* start listening */
-
-    /* connection handling loop: wait to accept connection */
-
-    while (1) {
-        /* handle connections */
-        ret = handle_connection(sock);
-
-		(void)ret; // DELETE ME
+    if (server_port < 1500) {
+        fprintf(stderr, "SPECIAL PERMISSION IS NEEDED TO BIND PORT NUMBER: %d;", server_port);
+        exit(-1);
     }
+    /*create socket*/
+    s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+
+    if ( s < 0 ){
+        fprintf(stderr, "FAILED TO CREATE SOCKET\n");
+        exit(-1);
+    }
+    /* set server address*/
+    memset(&saddr, 0, sizeof(saddr));
+    saddr.sin_family = AF_INET;
+    saddr.sin_addr.s_addr = INADDR_ANY;
+    saddr.sin_port = htons(server_port);
+    /* bind listening socket */
+    binder = bind(s, (struct sockaddr *) &saddr, sizeof(saddr));
+    if (binder < 0){
+        fprintf(stderr, "FAILED TO BIND SOCKET ADDRESS\n ");
+        exit(-1);
+    }
+    printf("Bind to Port Number: %d%c", server_port, '\n');
+    /* start listening */
+    listener = listen(s, 32);
+    printf("Listening Started%c", '\n');
+    if (listener < 0){
+        fprintf(stderr, "FAILED TO LISTEN FOR CONNECTION\n ");
+        exit(-1);
+    }
+    /* connection handling loop: wait to accept connection */
+    printf("Waiting for client connection...%c", '\n');
+    while (TRUE) {
+        /* handle connections */
+        ret = handle_connection(s);
+
+        if ( ret  < 0 ){
+            fprintf(stderr, "FAILED TO CONNECT");
+        }
+    }
+    close(listener);
 }
