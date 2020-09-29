@@ -1,7 +1,7 @@
 /*
  * CS 1652 Project 1
  * (c) Jack Lange, 2020
- * (c) <Student names here>
+ * (c) <Diana Kocsis and Christopher Godfrey>
  *
  * Computer Science Department
  * University of Pittsburgh
@@ -62,12 +62,6 @@ main(int argc, char ** argv)
         exit(1);
     }
 
-    /*
-     * NULL accesses to quiesce compiler errors
-     * Delete the following lines
-     */
-    //(void)server_name;
-    //(void)server_port;
 
     /* make socket */
     // Returns file descriptor
@@ -119,7 +113,7 @@ main(int argc, char ** argv)
     select(clientSocket + 1, &set, NULL, NULL, NULL);
 
     /* first read loop -- read headers */
-    if ((res = read(clientSocket, buf, sizeof(buf) - 1)) <= 0) {
+    if ((res = read(clientSocket, &buf, BUFSIZE - 1)) <= 0) {
         fprintf(stderr, "Error reading from socket.\n");
         free(req_str);
         close(clientSocket);
@@ -127,104 +121,101 @@ main(int argc, char ** argv)
     }
 
     buf[res] = 0;
-    printf("size of buf is %d\n", (int) sizeof(buf));
-    printf("res is %d\n", res);
-    //printf("received: %s", buf);
-//return 0;
+
+    // split response at \r\n\r\n
+
     char *token = "\r\n\r\n";
     char *response = NULL;
     char *new_resp = NULL;
 
-    response = (char *) malloc(strlen(buf));
+    response = (char *) malloc(BUFSIZE);
     int i = 0;
     while (res > 0) {
         // copy buffer into response string
         char *p;
-//printf("i is %d\n", i);
+
+        // if header was not found in first buffer
         if (i > 0) {
-        response = realloc(response,strlen(response) + strlen(buf));
-char temp[strlen(response) + strlen(buf)];
-                for (int i = 0; i < (int) strlen(header); i++)
-temp[i] = header[i];
-                char header[strlen(response) + strlen(buf)];
-strcpy(header, temp);
-printf("Here in i > 0\n");
-}
-        strcat(response, buf);
+            response = realloc(response,strlen(response) + strlen(buf));
+            char temp[strlen(response) + strlen(buf)];
+            for (int i = 0; i < (int) strlen(header); i++)
+                temp[i] = header[i];
+            char header[strlen(response) + strlen(buf)];
+            strncpy(header, temp, strlen(temp));
 
-        // split response at \r\n\r\n
+        }
+        // Add buffer to response string
+        if (i == 0)
+            strcpy(response, buf);
+        else
+            strcat(response, buf);
+
         // p becomes pointer to start of token to end of string
-        //char *temporary = NULL;
-//temporary = char
         p = strstr(response, token);
-        //printf("p is:\n%s", p + strlen(token));
-        //printf("response is: %s\n", response);
-//printf("end of response");
 
-if (p) {
-  strncpy(header, response, p-response);
-           header[p-response] = '\0';
-           new_resp = (char *) malloc(strlen(buf));
-           strncat(new_resp, p +strlen(token), strlen(p) + 1);
-           break;
-}
+        // if rnrn is found
+        if (p) {
+
+            strncpy(header, response, p-response);
+            header[p-response] = 0;
+            new_resp = (char *) malloc(strlen(buf));
+            if (i == 0)
+                strncpy(new_resp, p +strlen(token), strlen(p) + 1);
+            else
+                strncat(new_resp, p +strlen(token), strlen(p) + 1);
+            break;
+        }
         strcat(header, response);
-res = read(clientSocket, buf, sizeof(buf) - 1);
-buf[res] = 0;
-printf("i am here.\n");
+        res = read(clientSocket, buf, sizeof(buf) - 1);
+        buf[res] = 0;
+
         i++;
     }
 
 
-    /* print first part of response: header, error code, etc. */
-    //printf(header, strlen());
     free(response);
 
-    /* examine return code */
-
-b = true;
-
-
-    // Normal reply has return code 200
-
-    //length = 0;
-
-    int x = 0;
-
-
-    // second read loop -- print out the rest of the response: real web content
-    if (x > 0) {
-    while ((int) strlen(new_resp) < x) {
-             res = read(clientSocket, buf, sizeof(buf) - 1);
-             buf[res] = 0;
-    //printf("response is%s\n", response);
-    //printf("buffer is%s\n", buf);
-
-    strcat(new_resp, buf);
-       }
+    // Grab rest of response
+    res = 1;
+    while (res > 0) {
+        select(clientSocket + 1, &set, NULL, NULL, NULL);
+        res = read(clientSocket, buf, sizeof(buf) - 1);
+        buf[res] = 0;
+        new_resp = realloc(new_resp, strlen(new_resp) + strlen(buf));
+        strcat(new_resp, buf);
     }
+
+    // Copy into temp buffer to grab status
+    char tmp[strlen(header)];
+
+    for (int i = 0; i < (int) strlen(header); i++)
+        tmp[i] = header[i];
+
+    char * toks = " ";
+    char * tp = strstr(tmp, toks);
+    char * status = strtok(tp, toks);
+
+    if (atoi(status) == 200)
+        b = true;
+
+    /* print first part of response: header, error code, etc. */
+    if (b == true) {
+        printf(header, strlen(new_resp));
+        printf("\n%s\n", new_resp);
+    }
+
     else {
-        res = 1;
-        while (res > 0) {
-            select(clientSocket + 1, &set, NULL, NULL, NULL);
-            res = read(clientSocket, buf, sizeof(buf) - 1);
-            buf[res] = 0;
-   new_resp = realloc(new_resp, strlen(new_resp) + strlen(buf) + 1);
-            strcat(new_resp, buf);
-        }
+        fprintf(stderr, header, strlen(new_resp));
+
+        fprintf(stderr, "\n%s\n", new_resp);
     }
-    printf(header, strlen(new_resp));
-    printf("\n%s\n", new_resp);
-    printf("End.");
-
-
 
     /*close socket and deinitialize */
     close(clientSocket);
     free(new_resp);
     free(req_str);
     if (b == true)
-    return 0;
+        return 0;
     else
-return -1;
+        return -1;
 }

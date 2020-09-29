@@ -28,22 +28,24 @@
 static int handle_connection(int sock){
     /*header declaration*/
     char * ok_response_f  = "HTTP/1.0 200 OK\r\n"        \
-        					"Content-type: text/plain\r\n"                  \
-        					"Content-Length: %d \r\n\r\n";
+        "Content-type: text/plain\r\n"                  \
+        "Content-Length: %d \r\n\r\n";
 
     char * notok_response = "HTTP/1.0 404 FILE NOT FOUND\r\n"   \
-        					"Content-type: text/html\r\n\r\n"                       \
-        					"<html><body bgColor=black text=white>\n"               \
-        					"<h2>404 FILE NOT FOUND</h2>\n"
-        					"</body></html>\n";
+        "Content-type: text/html\r\n\r\n"                       \
+        "<html><body bgColor=black text=white>\n"               \
+        "<h2>404 FILE NOT FOUND</h2>\n"
+        "</body></html>\n";
     /*variable declarations*/
-	int len, i, j, c, res, fsize;
+int len, i, j, c, k, z, res, bytes;
     char buf[BUFSIZE];
-    char fileName[FILENAMESIZE];
-    int ok_response = 0;
+    int ok_response;
+    char * write_buf = NULL;
+    char * fileName = (char*)malloc(sizeof(char)*FILENAMESIZE); //declares the filename array
 
     /* first read loop -- get request and headers*/
-    while (( c = accept(sock, NULL, NULL)) >= 0 ){
+    while (( c = accept(sock, NULL, NULL)) >= 0 ){//RESETTING VARIABLES TO BE EMPTY OR WHAT THEY ARE INTIALLY INTENDED.
+        memset(buf, 0, BUFSIZE);
         if ((len = read(c, buf, sizeof(buf) - 1)) <= 0){
             fprintf(stderr, "FAILED TO READ LINE FROM SOCKET");
             exit(-1);
@@ -53,21 +55,29 @@ static int handle_connection(int sock){
         printf("Client Connected, Reading Request...%c", '\n');
 
         /*gets the filename from the read buffer*/
-        j = 0; /*file size*/
-        for ( i = 5; i < len; i++){ /*Assumption that is made is that every buffer request to the server will look the same so we can start on the 5th index point*/
-            if ( buf[i] == ' ') /*When you reach a space, that is how you know you reach the end of the file.*/
-                break;
-            else {
-                fileName[j] = buf[i];
-                j++;
+        j = FALSE; /*file size*/
+        k = 0;
+
+        memset(fileName, 0, FILENAMESIZE);
+
+        for ( i = 0; i < len; i++){ /*Assumption that is made is that every buffer request to the server will look the same so we can start on the 5th index point*/
+            if ( buf[i] == '/' && j == FALSE)
+                j = TRUE;/*When you reach a space, that is how you know you reach the end of the file.*/
+            else if ( buf[i] == ' ' && j == TRUE){
+                break;/*When you reach a space, that is how you know you reach the end of the file.*/
             }
+            else if ( j == TRUE ){
+                fileName[k] = buf[i];
+                k++;
+            }
+            else
+                continue;
         }
         buf[len] = 0; /*resets the buffer array so we can store the contents of file into the buffer array.*/
         /*Lets the sever operator know the exact requested file*/
         printf("The Requested file is: ");
-        int k;
-        for ( k= 0; k < j; k++)
-            printf("%c", fileName[k]);
+        for ( z= 0; z < k; z++)
+            printf("%c", fileName[z]);
 
          printf("%c", '\n');
 
@@ -75,11 +85,13 @@ static int handle_connection(int sock){
         FILE *req = fopen(fileName, "rb" );
 
         if ( req == NULL){
-            fprintf(stderr, "Error Opening file: %s%c ", fileName, '\n'); /*Okayresponse is set to default automatically so we don't set it here*/
+            fprintf(stderr, "Error Opening file: %s%c ", fileName, '\n');
+            ok_response = FALSE;
         }
         else{
             printf("Successfully opened file... %c", '\n');
-            ok_response = 1;
+            ok_response = TRUE;
+            free(fileName);
         }
         /*if the file was found, the response will be okay*/
         if ( ok_response ){
@@ -88,14 +100,21 @@ static int handle_connection(int sock){
                 fprintf(stderr, "FAILED TO WRITE OUT LINE TO SOCKET");
                 exit(-1);
             }
-            /*Opens and reads the file into buf*/
-            fseek(req, 0, SEEK_END);
-            fsize = ftell(req);
-            rewind(req);
-            fread(buf, fsize, 1, req);
 
+            write_buf = (char*)malloc(strlen(buf));
+            int j = 0;
+            /*Opens and reads the file into buf*/
+            while ( (bytes = fread(&buf, 1, BUFSIZE - 1, req)) > 0){
+               buf[bytes] = 0;
+              if (j == 0)
+                strcpy(write_buf, buf);
+              else {
+                  strcat(write_buf, buf);
+              }
+              j++;
+            }
             /*sends the contents of the finle into the socket*/
-            if ((res = write(c, buf, strlen(buf))) <= 0){
+            if ((res = write(c, write_buf, strlen(write_buf))) <= 0){
                 fprintf(stderr, "FAILED TO WRITE OUT LINE TO SOCKET");
                 exit(-1);
             }
@@ -110,12 +129,11 @@ static int handle_connection(int sock){
         printf("Request Processed, sending response to the Client...%c", '\n');
         close(c);
         printf("Waiting for client connection...%c", '\n');
-
     }
     /* close socket and free pointers */
+    free(write_buf);
     close(sock);
-    /* open and read the file */
-	return 0;
+return 0;
 }
 int main(int argc, char ** argv){
     int server_port = -1;
